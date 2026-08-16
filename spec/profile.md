@@ -23,10 +23,10 @@ document, checked against `vectors/vectors.json`.
 - Exactly **one** signature, labelled `sig1`.
 - Covered components, in this exact order:
   `("@method" "@path" "content-digest" "x-exec-audience" "x-exec-public-key")`.
-- Parameters: `created` (required), `expires` (required, `= created + 60`),
-  `nonce` (required, >= 16 chars), `keyid` (required), `tag="imbue-owner-exec"`
-  (required). `alg`, if present, must be `ed25519`; it is otherwise omitted
-  (the key type is unambiguous from the pinned key).
+- Parameters, in this order: `created`, `expires` (`= created + 60`), `nonce`
+  (>= 16 chars), `tag="imbue-owner-exec"`, `keyid` (all required). `alg`, if
+  present, must be `ed25519`; it is otherwise omitted (the key type is
+  unambiguous from the pinned key).
 - Headers the signer sets and the profile covers:
   - `Content-Digest: sha-256=:<base64>:` over the exact request body
     (RFC 9530). Empty body for GET.
@@ -55,12 +55,14 @@ document, checked against `vectors/vectors.json`.
 
 - Exactly one signature, labelled `sig1`.
 - Covered components, in this exact order:
-  `("@status" "content-digest" "@method";req "@path";req "signature";req;key="sig1")`.
+  `("@status" "content-digest" "@method";req "@path";req "signature";key="sig1";req)`.
   The `;req` components bind the response to the exact request that produced it
   (including the request's own signature), so a signed response cannot be
-  replayed against a different request.
-- Parameters: `created` (required), `keyid` (required),
-  `tag="imbue-owner-exec-resp"` (required).
+  replayed against a different request. Note the `signature` component's
+  parameters serialize `key` before `req` (structured-field insertion order),
+  in both the covered-component list and its signature-base line.
+- Parameters, in this order: `created`, `tag="imbue-owner-exec-resp"`, `keyid`
+  (all required).
 - `Content-Digest` covers the exact response body.
 
 ### Verifier steps
