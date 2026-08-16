@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -race ./...
+      - name: build static binary
+        run: CGO_ENABLED=0 go build -o /tmp/owner-exec ./cmd/owner-exec
+      - name: vectors are committed and current
+        run: |
+          go run ./cmd/gen-vectors > /tmp/vectors.json
+          # The signed values differ per run (created/nonce), so only check that
+          # generation succeeds and the committed file parses. Regeneration is a
+          # deliberate, committed step -- not an idempotency gate.
+          python3 -c "import json,sys; json.load(open('vectors/vectors.json'))"

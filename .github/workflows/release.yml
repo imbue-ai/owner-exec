@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Build per-arch static binaries
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          build() {
+            local goarch="$1" triple="$2"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" \
+              go build -trimpath -ldflags "-s -w -X main.version=${version}" \
+              -o "dist/owner-exec-${triple}" ./cmd/owner-exec
+            ( cd dist && sha256sum "owner-exec-${triple}" > "owner-exec-${triple}.sha256" )
+          }
+          build amd64 x86_64-unknown-linux
+          build arm64 aarch64-unknown-linux
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/owner-exec-x86_64-unknown-linux
+            dist/owner-exec-x86_64-unknown-linux.sha256
+            dist/owner-exec-aarch64-unknown-linux
+            dist/owner-exec-aarch64-unknown-linux.sha256
