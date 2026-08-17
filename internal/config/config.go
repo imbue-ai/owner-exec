@@ -94,10 +94,29 @@ func (f *File) validate() error {
 	if f.RepoRoot == "" {
 		return fmt.Errorf("repo_root must be set")
 	}
-	if f.Role == RoleVM && f.ResolvedFixedAudience() == "" {
-		return fmt.Errorf("the vm role requires an audience or host_id")
+	if f.Role == RoleVM {
+		if f.ResolvedFixedAudience() == "" {
+			return fmt.Errorf("the vm role requires an audience or host_id")
+		}
+		// The vm role runs on a host with a public IP; it must bind a specific
+		// (internal docker-bridge) address, never a wildcard, or it would be
+		// reachable on the public interface. Fail closed on a wildcard bind.
+		if isWildcardListenHost(f.ListenHost) {
+			return fmt.Errorf(
+				"the vm role must bind a specific address (the docker bridge), not the wildcard %q", f.ListenHost)
+		}
 	}
 	return nil
+}
+
+// isWildcardListenHost reports whether a listen host binds all interfaces.
+func isWildcardListenHost(host string) bool {
+	switch host {
+	case "", "0.0.0.0", "::", "[::]", "*":
+		return true
+	default:
+		return false
+	}
 }
 
 // ResolvedFixedAudience returns the audience configured directly, or derived

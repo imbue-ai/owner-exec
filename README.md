@@ -64,7 +64,7 @@ A single TOML file (`--config <path>`):
 role = "vm"                 # "inner" or "vm"
 host_id = "host-abcd1234"   # forms the audience: "vm:<host-id>" or "container:<host-id>"
 # audience = "vm:host-..."  # or set the exact audience directly (overrides host_id)
-listen_host = "127.0.0.1"
+listen_host = "172.17.0.1"  # a SPECIFIC address; the vm role rejects a wildcard (see below)
 listen_port = 8794
 repo_root = "/home/user/workspace"
 authorized_keys_path = "/root/.ssh/authorized_keys"
@@ -75,6 +75,12 @@ register_port = false       # inner role: register listen_port into apps.toml at
 service_name = "owner-exec"
 forward_port_script = ""    # path to forward_port.py
 ```
+
+The **vm role must bind a specific address** -- the internal docker-bridge
+address the workspace container reaches it at (e.g. `172.17.0.1`), never a
+wildcard (`0.0.0.0` / `::` / empty). Binding a wildcard on a VPS, whose VM has
+a public IP, would put the daemon on the public interface; config validation
+rejects it outright. The inner role binds container loopback (`127.0.0.1`).
 
 The vm role requires an `audience` or `host_id` and accepts only that single
 value. The inner role accepts a *set*: its fixed `container:<host-id>` (from

@@ -47,6 +47,36 @@ repo_root = "/home/user/workspace"
 	}
 }
 
+func TestLoadVMRoleRejectsWildcardListenHost(t *testing.T) {
+	for _, wildcard := range []string{"0.0.0.0", "::", ""} {
+		body := "role = \"vm\"\nhost_id = \"host-abcd1234\"\nlisten_port = 8794\nrepo_root = \"/x\"\n"
+		if wildcard != "" {
+			body += "listen_host = \"" + wildcard + "\"\n"
+		} else {
+			// Empty listen_host would default to 127.0.0.1 via Load; force the
+			// wildcard explicitly to exercise the guard.
+			body += "listen_host = \"\"\n"
+		}
+		path := writeConfig(t, body)
+		if _, err := Load(path); err == nil {
+			t.Fatalf("expected the vm role to reject wildcard listen_host %q", wildcard)
+		}
+	}
+}
+
+func TestLoadVMRoleAcceptsSpecificListenHost(t *testing.T) {
+	path := writeConfig(t, `
+role = "vm"
+host_id = "host-abcd1234"
+listen_host = "172.17.0.1"
+listen_port = 8794
+repo_root = "/x"
+`)
+	if _, err := Load(path); err != nil {
+		t.Fatalf("expected a specific vm listen_host to be accepted: %v", err)
+	}
+}
+
 func TestLoadVMRoleRequiresAudience(t *testing.T) {
 	path := writeConfig(t, `
 role = "vm"
