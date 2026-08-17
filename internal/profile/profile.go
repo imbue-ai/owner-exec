@@ -196,6 +196,17 @@ func ParseAuthorizedEd25519Keys(text string) []ed25519.PublicKey {
 	return keys
 }
 
+// isAcceptedAudience reports whether audience is one of the accepted (non-empty)
+// audiences.
+func isAcceptedAudience(audience string, accepted []string) bool {
+	for _, candidate := range accepted {
+		if candidate != "" && audience == candidate {
+			return true
+		}
+	}
+	return false
+}
+
 // IsAuthorized reports whether key is one of the authorized keys, by raw
 // public-key bytes.
 func IsAuthorized(key ed25519.PublicKey, authorized []ed25519.PublicKey) bool {
@@ -489,9 +500,11 @@ func SignRequest(
 
 // RequestVerifyConfig is everything a server needs to verify one request.
 type RequestVerifyConfig struct {
-	// Audience is the verifier's own audience; the covered X-Exec-Audience
-	// header must equal it exactly.
-	Audience string
+	// AcceptedAudiences is the set of audiences this endpoint answers to; the
+	// covered X-Exec-Audience header must equal one of them exactly. The inner
+	// role accepts both its fixed container:<host-id> audience and the current
+	// share domain; the vm role accepts only vm:<host-id>.
+	AcceptedAudiences []string
 	// AuthorizedKeys is the current set of Ed25519 keys the target trusts.
 	AuthorizedKeys []ed25519.PublicKey
 	// Nonces is the replay cache; the nonce is claimed only after every other
@@ -505,14 +518,14 @@ type RequestVerifyConfig struct {
 // *AuthError on any failure. body must be the exact request body bytes; the
 // caller is responsible for having limited its size.
 func VerifyRequest(req *http.Request, body []byte, cfg RequestVerifyConfig) error {
-	if cfg.Audience == "" {
+	if len(cfg.AcceptedAudiences) == 0 {
 		return authErrorf("no audience is configured, so exec is unavailable")
 	}
 	audience := req.Header.Get(AudienceHeader)
 	if audience == "" {
 		return authErrorf("request is missing the %s header", AudienceHeader)
 	}
-	if audience != cfg.Audience {
+	if !isAcceptedAudience(audience, cfg.AcceptedAudiences) {
 		return authErrorf("request audience does not match this endpoint")
 	}
 

@@ -52,16 +52,16 @@ func newHarness(t *testing.T, grantsEnabled bool) *harness {
 
 	audience := "vm:host-abcd"
 	cfg := &Config{
-		AudienceResolver:     func() string { return audience },
-		AuthorizedKeysPath:   authorizedKeysPath,
-		RepoRoot:             repoRoot,
-		HostSigningKey:       hostKey,
-		HostKeyID:            hostKeyID,
-		GrantsEnabled:        grantsEnabled,
-		ChromeOriginResolver: func() string { return "https://chrome.example" },
-		Version:              "test",
-		Role:                 "vm",
-		Now:                  time.Now,
+		AcceptedAudiencesResolver: func() []string { return []string{audience} },
+		AuthorizedKeysPath:        authorizedKeysPath,
+		RepoRoot:                  repoRoot,
+		HostSigningKey:            hostKey,
+		HostKeyID:                 hostKeyID,
+		GrantsEnabled:             grantsEnabled,
+		ChromeOriginResolver:      func() string { return "https://chrome.example" },
+		Version:                   "test",
+		Role:                      "vm",
+		Now:                       time.Now,
 	}
 	server := httptest.NewServer(New(cfg))
 	t.Cleanup(server.Close)

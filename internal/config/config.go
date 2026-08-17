@@ -15,11 +15,14 @@ import (
 type Role string
 
 const (
-	// RoleInner runs inside the workspace container (audience ct:<host-id>,
-	// grants served, audience/chrome-origin read from share.env).
+	// RoleInner runs inside the workspace container. It accepts its fixed
+	// container:<host-id> audience and, additionally, the workspace share
+	// domain from share.env (so exec works whether or not the workspace is
+	// shared). Grants are served.
 	RoleInner Role = "inner"
 	// RoleVM runs on the remote outer host as root (audience vm:<host-id>,
-	// grants disabled, audience is a fixed VM-owned value).
+	// grants disabled, audience is a fixed VM-owned value; never the share
+	// domain).
 	RoleVM Role = "vm"
 )
 
@@ -31,7 +34,7 @@ type File struct {
 	// from share.env instead (share domain), preserving today's behavior; the
 	// vm role must set it explicitly.
 	Audience string `toml:"audience"`
-	// HostID, when set with an empty Audience, forms "ct:<host-id>" /
+	// HostID, when set with an empty Audience, forms "container:<host-id>" /
 	// "vm:<host-id>" per role -- the host-id-scoped audience.
 	HostID string `toml:"host_id"`
 	// ListenHost / ListenPort is where the daemon binds.
@@ -107,7 +110,7 @@ func (f *File) ResolvedFixedAudience() string {
 	if f.HostID == "" {
 		return ""
 	}
-	prefix := "ct:"
+	prefix := "container:"
 	if f.Role == RoleVM {
 		prefix = "vm:"
 	}

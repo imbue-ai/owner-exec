@@ -17,7 +17,7 @@ binary, selected entirely by config:
 
 - **inner** -- inside a workspace container, so a browser-only client can drive
   the workspace (finish a create, provision backups, edit sharing grants)
-  without an SSH client. Audience `ct:<host-id>`.
+  without an SSH client. Audience `container:<host-id>`.
 - **vm** -- directly on the remote outer host (an imbue-cloud slice VM or a
   VPS) as root, so the owner can configure everything that runs *outside* the
   container (the latchkey gateway, VM debugging, key rotation, reboot
@@ -62,7 +62,7 @@ A single TOML file (`--config <path>`):
 
 ```toml
 role = "vm"                 # "inner" or "vm"
-host_id = "host-abcd1234"   # forms the audience: "vm:<host-id>" or "ct:<host-id>"
+host_id = "host-abcd1234"   # forms the audience: "vm:<host-id>" or "container:<host-id>"
 # audience = "vm:host-..."  # or set the exact audience directly (overrides host_id)
 listen_host = "127.0.0.1"
 listen_port = 8794
@@ -76,10 +76,11 @@ service_name = "owner-exec"
 forward_port_script = ""    # path to forward_port.py
 ```
 
-The vm role requires an `audience` or `host_id`. The inner role may leave both
-unset and derive its audience from `SHARE_WORKSPACE_DOMAIN` in `share.env`
-(preserving the pre-Go behavior), though a `host_id`-derived `ct:<host-id>`
-audience is preferred so exec is available even while unshared.
+The vm role requires an `audience` or `host_id` and accepts only that single
+value. The inner role accepts a *set*: its fixed `container:<host-id>` (from
+`host_id`) **and** the current `SHARE_WORKSPACE_DOMAIN` from `share.env` when
+set -- so a client may address it by either, and exec works whether or not the
+workspace is shared. New clients should send `container:<host-id>`.
 
 ## Build
 

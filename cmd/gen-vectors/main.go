@@ -144,10 +144,10 @@ func main() {
 	})
 
 	readBody := []byte(`{"path":"data/example.txt"}`)
-	readReq := signedRequest("POST", "http://127.0.0.1:8793/read-file", readBody, "ct:host-abcd", "nonce-fedcba9876543210", clientKey, clientLine)
+	readReq := signedRequest("POST", "http://127.0.0.1:8793/read-file", readBody, "container:host-abcd", "nonce-fedcba9876543210", clientKey, clientLine)
 	file.Requests = append(file.Requests, requestVector{
 		Name: "read-file-valid", ExpectValid: true, Method: "POST", URL: "http://127.0.0.1:8793/read-file",
-		Audience: "ct:host-abcd", AuthorizedKeyLine: clientLine, BodyB64: base64.StdEncoding.EncodeToString(readBody),
+		Audience: "container:host-abcd", AuthorizedKeyLine: clientLine, BodyB64: base64.StdEncoding.EncodeToString(readBody),
 		VerifyAt: createdOf(readReq), Headers: headerMap(readReq.Header, signedHeaderNames...),
 	})
 

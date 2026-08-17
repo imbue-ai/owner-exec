@@ -56,14 +56,24 @@ func run(cfg *config.File) error {
 		return fmt.Errorf("loading host key: %w", err)
 	}
 
-	// The audience is fixed for the vm role; for the inner role it may fall
-	// back to the share domain read from share.env per request.
+	// The endpoint's accepted audiences, resolved per request so a re-share is
+	// picked up without a restart. Both roles accept their fixed host-id-scoped
+	// audience (container:<host-id> / vm:<host-id>). The inner role ADDITIONALLY
+	// accepts the workspace share domain from share.env, so exec works whether
+	// or not the workspace is shared; the vm role never does (its share.env
+	// lives in the container it must not trust for this).
 	fixedAudience := cfg.ResolvedFixedAudience()
-	audienceResolver := func() string {
+	acceptedAudiencesResolver := func() []string {
+		audiences := make([]string, 0, 2)
 		if fixedAudience != "" {
-			return fixedAudience
+			audiences = append(audiences, fixedAudience)
 		}
-		return config.ShareDomainAudience(cfg.ShareEnvPath)
+		if cfg.Role == config.RoleInner {
+			if shareDomain := config.ShareDomainAudience(cfg.ShareEnvPath); shareDomain != "" {
+				audiences = append(audiences, shareDomain)
+			}
+		}
+		return audiences
 	}
 	chromeOriginResolver := func() string {
 		return config.ShareChromeOrigin(cfg.ShareEnvPath)
@@ -74,16 +84,16 @@ func run(cfg *config.File) error {
 	}
 
 	handler := server.New(&server.Config{
-		AudienceResolver:     audienceResolver,
-		AuthorizedKeysPath:   cfg.AuthorizedKeysPath,
-		RepoRoot:             cfg.RepoRoot,
-		HostSigningKey:       signingKey,
-		HostKeyID:            keyID,
-		GrantsEnabled:        cfg.GrantsEnabled,
-		ChromeOriginResolver: chromeOriginResolver,
-		Version:              version,
-		Role:                 string(cfg.Role),
-		Now:                  time.Now,
+		AcceptedAudiencesResolver: acceptedAudiencesResolver,
+		AuthorizedKeysPath:        cfg.AuthorizedKeysPath,
+		RepoRoot:                  cfg.RepoRoot,
+		HostSigningKey:            signingKey,
+		HostKeyID:                 keyID,
+		GrantsEnabled:             cfg.GrantsEnabled,
+		ChromeOriginResolver:      chromeOriginResolver,
+		Version:                   version,
+		Role:                      string(cfg.Role),
+		Now:                       time.Now,
 	})
 
 	listenAddr := net.JoinHostPort(cfg.ListenHost, fmt.Sprintf("%d", cfg.ListenPort))

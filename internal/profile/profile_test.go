@@ -44,10 +44,10 @@ func signedTestRequest(t *testing.T, body []byte, audience string, private ed255
 
 func verifyConfig(publicKeyLine string) RequestVerifyConfig {
 	return RequestVerifyConfig{
-		Audience:       "vm:host-0123",
-		AuthorizedKeys: ParseAuthorizedEd25519Keys(publicKeyLine),
-		Nonces:         NewNonceCache(CreatedWindowSeconds),
-		Now:            time.Now,
+		AcceptedAudiences: []string{"vm:host-0123"},
+		AuthorizedKeys:    ParseAuthorizedEd25519Keys(publicKeyLine),
+		Nonces:            NewNonceCache(CreatedWindowSeconds),
+		Now:               time.Now,
 	}
 }
 
@@ -63,10 +63,38 @@ func TestSignAndVerifyRequestRoundTrip(t *testing.T) {
 func TestVerifyRequestRejectsWrongAudience(t *testing.T) {
 	private, line := makeKeypair(t, 1)
 	body := []byte(`{}`)
-	req := signedTestRequest(t, body, "ct:host-0123", private, line, "nonce-0123456789abcdef")
+	req := signedTestRequest(t, body, "container:host-0123", private, line, "nonce-0123456789abcdef")
 	err := VerifyRequest(req, body, verifyConfig(line))
 	if err == nil || !strings.Contains(err.Error(), "audience") {
 		t.Fatalf("expected an audience error, got: %v", err)
+	}
+}
+
+func TestVerifyRequestAcceptsAnyConfiguredAudience(t *testing.T) {
+	// The inner role accepts both its container:<host-id> audience and the
+	// share domain; an envelope for either verifies, one for neither does not.
+	private, line := makeKeypair(t, 1)
+	body := []byte(`{}`)
+	accepted := []string{"container:host-0123", "ws.example.com"}
+	makeConfig := func() RequestVerifyConfig {
+		return RequestVerifyConfig{
+			AcceptedAudiences: accepted,
+			AuthorizedKeys:    ParseAuthorizedEd25519Keys(line),
+			Nonces:            NewNonceCache(CreatedWindowSeconds),
+			Now:               time.Now,
+		}
+	}
+	for idx, audience := range accepted {
+		nonce := "nonce-accept-both-" + string(rune('a'+idx))
+		req := signedTestRequest(t, body, audience, private, line, nonce)
+		if err := VerifyRequest(req, body, makeConfig()); err != nil {
+			t.Fatalf("expected audience %q to verify: %v", audience, err)
+		}
+	}
+	// A vm-role audience the inner endpoint does not list must be rejected.
+	req := signedTestRequest(t, body, "vm:host-0123", private, line, "nonce-accept-both-reject")
+	if err := VerifyRequest(req, body, makeConfig()); err == nil || !strings.Contains(err.Error(), "audience") {
+		t.Fatalf("expected an audience error for an unlisted audience, got: %v", err)
 	}
 }
 

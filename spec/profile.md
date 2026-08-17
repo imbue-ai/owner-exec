@@ -31,14 +31,15 @@ document, checked against `vectors/vectors.json`.
   - `Content-Digest: sha-256=:<base64>:` over the exact request body
     (RFC 9530). Empty body for GET.
   - `X-Exec-Audience: <audience>` -- the value the verifier compares against
-    its **own configured audience**, never against the request URL/authority.
-    (`ct:<host-id>` for the inner role, `vm:<host-id>` for the vm role.)
+    its **own configured audience(s)**, never against the request URL/authority.
+    The inner role accepts `container:<host-id>` and the current share domain;
+    the vm role accepts only `vm:<host-id>`.
   - `X-Exec-Public-Key: <openssh public key line>` -- the key that signed.
 
 ### Verifier steps (in order, all required)
 
-1. A configured audience exists (else exec is unavailable) and equals
-   `X-Exec-Audience` exactly.
+1. At least one audience is configured (else exec is unavailable) and
+   `X-Exec-Audience` equals one of them exactly.
 2. `X-Exec-Public-Key` parses as an Ed25519 OpenSSH key and is present in
    `authorized_keys`.
 3. `Signature-Input` is exactly one `sig1` member with exactly the covered
@@ -105,9 +106,13 @@ signature stops a captured trailer being replayed for a different request.
 
 The three `tag` values (`imbue-owner-exec`, `imbue-owner-exec-resp`,
 `imbue-owner-exec-stream`) mean a signature made for one kind can never verify
-as another. The two audiences (`ct:` / `vm:`) mean an inner-role request
-envelope can never verify at the vm-role instance or vice versa, even though
-the same key is authorized on both endpoints.
+as another. The audience prefixes (`container:` / `vm:`) mean an inner-role
+request envelope can never verify at the vm-role instance or vice versa, even
+though the same key is authorized on both endpoints. The inner role accepts a
+*set* of audiences -- its fixed `container:<host-id>` plus the current share
+domain -- so exec works whether or not the workspace is shared; those sets stay
+disjoint from the vm role's `vm:<host-id>`, so cross-instance replay is still
+impossible.
 
 ## Threat model
 

@@ -42,8 +42,8 @@ repo_root = "/home/user/workspace"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.ResolvedFixedAudience(); got != "ct:host-abcd1234" {
-		t.Fatalf("expected ct:host-abcd1234, got %q", got)
+	if got := cfg.ResolvedFixedAudience(); got != "container:host-abcd1234" {
+		t.Fatalf("expected container:host-abcd1234, got %q", got)
 	}
 }
 

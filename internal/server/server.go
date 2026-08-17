@@ -40,9 +40,12 @@ const (
 // resolver fields are read per request so enabling/disabling sharing (or
 // rotating the host key) needs no restart.
 type Config struct {
-	// Audience this endpoint binds envelopes to (e.g. "vm:host-<hex>"). An
-	// empty return from AudienceResolver disables exec.
-	AudienceResolver func() string
+	// AcceptedAudiencesResolver returns the audiences this endpoint answers to
+	// (read per request so a re-share is picked up without a restart). An empty
+	// return disables exec. The inner role returns its fixed container:<host-id>
+	// audience plus the current share domain; the vm role returns only
+	// vm:<host-id>.
+	AcceptedAudiencesResolver func() []string
 	// AuthorizedKeysPath is the authorized_keys file to verify against.
 	AuthorizedKeysPath string
 	// RepoRoot anchors relative file paths and the default cwd.
@@ -139,10 +142,10 @@ func (c *Config) wrap(next handlerFunc) http.HandlerFunc {
 			return
 		}
 		verifyErr := profile.VerifyRequest(r, body, profile.RequestVerifyConfig{
-			Audience:       c.AudienceResolver(),
-			AuthorizedKeys: profile.ParseAuthorizedEd25519Keys(string(authorizedText)),
-			Nonces:         c.nonces,
-			Now:            c.Now,
+			AcceptedAudiences: c.AcceptedAudiencesResolver(),
+			AuthorizedKeys:    profile.ParseAuthorizedEd25519Keys(string(authorizedText)),
+			Nonces:            c.nonces,
+			Now:               c.Now,
 		})
 		if verifyErr != nil {
 			var authErr *profile.AuthError
