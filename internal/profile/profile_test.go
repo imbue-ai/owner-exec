@@ -208,6 +208,44 @@ func TestParseAuthorizedEd25519KeysSkipsOtherKeyTypes(t *testing.T) {
 	}
 }
 
+func TestParseAuthorizedEd25519KeysNeverAuthorizesLinesWithOptions(t *testing.T) {
+	private, line := makeKeypair(t, 4)
+	public := private.Public().(ed25519.PublicKey)
+	for _, prefix := range []string{
+		`command="/usr/bin/uptime" `,
+		`restrict `,
+		`from="10.0.0.0/8" `,
+		`cert-authority `,
+		`no-pty,no-port-forwarding `,
+		`restrict,command="/usr/bin/uptime",from="203.0.113.4" `,
+		`environment="FOO=bar baz" `,
+	} {
+		keys := ParseAuthorizedEd25519Keys(prefix + line + "\n")
+		if len(keys) != 0 {
+			t.Fatalf("line with options %q must authorize nothing, got %d key(s)", prefix, len(keys))
+		}
+		if IsAuthorized(public, keys) {
+			t.Fatalf("line with options %q must not authorize its key", prefix)
+		}
+	}
+}
+
+func TestParseAuthorizedEd25519KeysKeepsPlainKeysNextToRestrictedOnes(t *testing.T) {
+	plainPrivate, plainLine := makeKeypair(t, 5)
+	restrictedPrivate, restrictedLine := makeKeypair(t, 6)
+	text := plainLine + "\n" + `restrict,command="/usr/bin/uptime" ` + restrictedLine + "\n"
+	keys := ParseAuthorizedEd25519Keys(text)
+	if len(keys) != 1 {
+		t.Fatalf("expected exactly the plain key, got %d key(s)", len(keys))
+	}
+	if !IsAuthorized(plainPrivate.Public().(ed25519.PublicKey), keys) {
+		t.Fatal("the plain key must stay authorized")
+	}
+	if IsAuthorized(restrictedPrivate.Public().(ed25519.PublicKey), keys) {
+		t.Fatal("the restricted key must not be authorized")
+	}
+}
+
 func TestSignAndVerifyResponseRoundTrip(t *testing.T) {
 	clientKey, clientLine := makeKeypair(t, 1)
 	hostKey, hostLine := makeKeypair(t, 9)

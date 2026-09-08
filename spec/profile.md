@@ -12,7 +12,10 @@ document, checked against `vectors/vectors.json`.
 - Request signatures use an **Ed25519** key whose public half is present in the
   target's `authorized_keys`. Authorization = possession of a trusted key,
   exactly SSH's model. Non-Ed25519 authorized keys are ignored by exec (they
-  may still serve plain SSH).
+  may still serve plain SSH), and so is any line carrying authorized_keys
+  options (`command="..."`, `restrict`, `from="..."`, `cert-authority`, ...):
+  sshd would confine such a key or treat it as a CA, exec can do neither, so
+  it never authorizes one.
 - Response and stream-trailer signatures use the target endpoint's **SSH host
   key** (`/etc/ssh/ssh_host_ed25519_key`), which the client has pinned out of
   band (the lease/claim response and the synced workspace record).
