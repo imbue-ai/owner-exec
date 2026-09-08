@@ -155,20 +155,30 @@ func hmacEqual(a, b []byte) bool {
 
 // ParsePublicKeyLine parses one OpenSSH authorized_keys-style line into its
 // SSH form (for fingerprinting) and raw Ed25519 form (for verification).
+// Any authorized_keys options on the line are ignored; callers that authorize
+// from a file must use ParseAuthorizedEd25519Keys, which refuses them.
 func ParsePublicKeyLine(line string) (ssh.PublicKey, ed25519.PublicKey, error) {
 	sshKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(line)))
 	if err != nil {
 		return nil, nil, fmt.Errorf("not a usable OpenSSH public key: %w", err)
 	}
+	edKey, err := ed25519FromSSHPublicKey(sshKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sshKey, edKey, nil
+}
+
+func ed25519FromSSHPublicKey(sshKey ssh.PublicKey) (ed25519.PublicKey, error) {
 	cryptoKey, ok := sshKey.(ssh.CryptoPublicKey)
 	if !ok {
-		return nil, nil, fmt.Errorf("public key does not expose a crypto key")
+		return nil, fmt.Errorf("public key does not expose a crypto key")
 	}
 	edKey, ok := cryptoKey.CryptoPublicKey().(ed25519.PublicKey)
 	if !ok {
-		return nil, nil, fmt.Errorf("public key is not Ed25519")
+		return nil, fmt.Errorf("public key is not Ed25519")
 	}
-	return sshKey, edKey, nil
+	return edKey, nil
 }
 
 // Fingerprint returns the standard SHA256 OpenSSH fingerprint used as keyid.
@@ -180,6 +190,15 @@ func Fingerprint(pub ssh.PublicKey) string {
 // file body. Non-Ed25519 keys and unparseable lines are skipped: the target
 // may also authorize RSA/ECDSA keys for plain SSH, but exec accepts only
 // Ed25519.
+//
+// A line carrying any authorized_keys options is skipped as well, never
+// authorized. sshd would confine such a key -- `command="..."` or `restrict`
+// to one forced command, `from="..."` to some source addresses -- or, for
+// `cert-authority`, would not treat it as a key at all but as a CA whose
+// signed certificates it trusts; exec has no notion of any of those, so the
+// only faithful reading of a restricted line is "not a bare exec key".
+// Skipping (rather than failing the whole set) keeps a restricted monitoring
+// key from taking exec down for the plain keys next to it.
 func ParseAuthorizedEd25519Keys(text string) []ed25519.PublicKey {
 	var keys []ed25519.PublicKey
 	for _, rawLine := range strings.Split(text, "\n") {
@@ -187,7 +206,11 @@ func ParseAuthorizedEd25519Keys(text string) []ed25519.PublicKey {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		_, edKey, err := ParsePublicKeyLine(line)
+		sshKey, _, options, _, err := ssh.ParseAuthorizedKey([]byte(line))
+		if err != nil || len(options) > 0 {
+			continue
+		}
+		edKey, err := ed25519FromSSHPublicKey(sshKey)
 		if err != nil {
 			continue
 		}

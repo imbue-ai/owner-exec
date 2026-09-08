@@ -6,7 +6,10 @@ over a workspace via a small HTTP surface, instead of an SSH session.
 `owner-exec` is a single static Go binary. Every request is signed with an
 Ed25519 key whose public half must appear in the target's `authorized_keys`
 (so authorization is exactly SSH's model: possession of a key the target
-trusts), and every response is signed with the target's own SSH host key,
+trusts; a line carrying authorized_keys options such as `restrict`,
+`command="..."`, `from="..."` or `cert-authority` is never authorized, since
+exec cannot honor what they mean), and every response is signed with the
+target's own SSH host key,
 bound to the request it answers. Signing uses a **strict profile of
 [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421) (HTTP Message Signatures)
 and [RFC 9530](https://www.rfc-editor.org/rfc/rfc9530) (Content-Digest)** --
