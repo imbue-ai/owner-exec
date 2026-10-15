@@ -94,6 +94,7 @@ func run(cfg *config.File) error {
 		Version:                   version,
 		Role:                      string(cfg.Role),
 		Now:                       time.Now,
+		Audit:                     server.NewAuditLog(cfg.AuditLogPath, time.Now),
 	})
 
 	listenAddr := net.JoinHostPort(cfg.ListenHost, fmt.Sprintf("%d", cfg.ListenPort))

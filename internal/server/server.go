@@ -64,6 +64,8 @@ type Config struct {
 	Role string
 	// Now supplies the server clock (injectable for tests).
 	Now func() time.Time
+	// Audit records every verified operation; nil records nothing.
+	Audit *AuditLog
 
 	nonces        *profile.NonceCache
 	grantsWriteMu sync.Mutex
@@ -114,10 +116,12 @@ func (c *Config) handleAlive(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// authedRequest carries the verified request and its exact body to a handler.
+// authedRequest carries the verified request, its exact body, and the
+// fingerprint of the key that signed it to a handler.
 type authedRequest struct {
-	req  *http.Request
-	body []byte
+	req   *http.Request
+	body  []byte
+	keyID string
 }
 
 // handlerFunc is a verified-request handler. It returns a signed response via
@@ -156,7 +160,11 @@ func (c *Config) wrap(next handlerFunc) http.HandlerFunc {
 			}
 			return
 		}
-		next(w, &authedRequest{req: r, body: body})
+		keyID := ""
+		if sshPub, _, parseErr := profile.ParsePublicKeyLine(r.Header.Get("X-Exec-Public-Key")); parseErr == nil {
+			keyID = profile.Fingerprint(sshPub)
+		}
+		next(w, &authedRequest{req: r, body: body, keyID: keyID})
 	}
 }
 
@@ -201,7 +209,11 @@ func (c *Config) handleRun(w http.ResponseWriter, ar *authedRequest) {
 	w.WriteHeader(http.StatusOK)
 	flusher, _ := w.(http.Flusher)
 	hasher := sha256.New()
+	var exitEvent map[string]any
 	emit := func(event map[string]any) {
+		if event["type"] == "exit" {
+			exitEvent = event
+		}
 		line, _ := json.Marshal(event)
 		line = append(line, '\n')
 		hasher.Write(line)
@@ -210,7 +222,15 @@ func (c *Config) handleRun(w http.ResponseWriter, ar *authedRequest) {
 			flusher.Flush()
 		}
 	}
+	startedAt := c.Now()
 	c.streamCommand(payload.Command, cwd, timeout, emit)
+	c.Audit.Record("run", ar.keyID, map[string]any{
+		"command":     payload.Command,
+		"cwd":         cwd,
+		"exit_code":   exitEvent["code"],
+		"timed_out":   exitEvent["timed_out"] == true,
+		"duration_ms": c.Now().Sub(startedAt).Milliseconds(),
+	})
 	created := c.Now().Unix()
 	streamDigest := hasher.Sum(nil)
 	signature := profile.SignStreamTrailer(streamDigest, requestSignature, created, c.HostSigningKey, c.HostKeyID)
@@ -319,6 +339,7 @@ func (c *Config) handleReadFile(w http.ResponseWriter, ar *authedRequest) {
 		c.signedError(w, ar.req, ar.body, http.StatusBadRequest, fmt.Sprintf("could not read %s", payload.Path))
 		return
 	}
+	c.Audit.Record("read_file", ar.keyID, map[string]any{"path": payload.Path, "bytes": len(content)})
 	c.signedResponse(w, ar.req, http.StatusOK, map[string]any{
 		"exists":      true,
 		"content_b64": base64.StdEncoding.EncodeToString(content),
@@ -348,6 +369,7 @@ func (c *Config) handleWriteFile(w http.ResponseWriter, ar *authedRequest) {
 		c.signedError(w, ar.req, ar.body, http.StatusBadRequest, fmt.Sprintf("could not write %s", payload.Path))
 		return
 	}
+	c.Audit.Record("write_file", ar.keyID, map[string]any{"path": payload.Path, "bytes": len(content)})
 	c.signedResponse(w, ar.req, http.StatusOK, map[string]any{"written": true})
 }
 
@@ -434,6 +456,7 @@ func (c *Config) putGrants(w http.ResponseWriter, ar *authedRequest) {
 		c.signedError(w, ar.req, ar.body, http.StatusBadRequest, "could not write grants")
 		return
 	}
+	c.Audit.Record("put_grants", ar.keyID, map[string]any{"revision": grantsRevision(newContent)})
 	c.signedResponse(w, ar.req, http.StatusOK, map[string]any{
 		"written":  true,
 		"revision": grantsRevision(newContent),

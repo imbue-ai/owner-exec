@@ -27,6 +27,7 @@ type harness struct {
 	hostKeyID  string
 	repoRoot   string
 	audience   string
+	auditPath  string
 }
 
 func newHarness(t *testing.T, grantsEnabled bool) *harness {
@@ -51,7 +52,9 @@ func newHarness(t *testing.T, grantsEnabled bool) *harness {
 	hostKeyID := ssh.FingerprintSHA256(hostSSHPub)
 
 	audience := "vm:host-abcd"
+	auditPath := filepath.Join(repoRoot, "audit", "events.jsonl")
 	cfg := &Config{
+		Audit:                     NewAuditLog(auditPath, time.Now),
 		AcceptedAudiencesResolver: func() []string { return []string{audience} },
 		AuthorizedKeysPath:        authorizedKeysPath,
 		RepoRoot:                  repoRoot,
@@ -73,6 +76,7 @@ func newHarness(t *testing.T, grantsEnabled bool) *harness {
 		hostKeyID:  hostKeyID,
 		repoRoot:   repoRoot,
 		audience:   audience,
+		auditPath:  auditPath,
 	}
 }
 
@@ -346,4 +350,56 @@ func splitNonEmptyLines(text string) []string {
 		}
 	}
 	return out
+}
+
+func TestAuditLogRecordsEveryVerifiedOperationUnderTheSigningKey(t *testing.T) {
+	h := newHarness(t, false)
+	clientSSHPub, _, err := profile.ParsePublicKeyLine(h.clientLine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientKeyID := profile.Fingerprint(clientSSHPub)
+
+	writeBody, _ := json.Marshal(map[string]any{"path": "note.txt", "content_b64": base64.StdEncoding.EncodeToString([]byte("hi\n"))})
+	h.signedDo(t, http.MethodPost, "/write-file", writeBody, "nonce-audit-write-0001").Body.Close()
+	readBody, _ := json.Marshal(map[string]any{"path": "note.txt"})
+	h.signedDo(t, http.MethodPost, "/read-file", readBody, "nonce-audit-read-00001").Body.Close()
+	runBody, _ := json.Marshal(map[string]any{"command": []string{"sh", "-c", "exit 3"}})
+	resp := h.signedDo(t, http.MethodPost, "/run", runBody, "nonce-audit-run-000001")
+	io.ReadAll(resp.Body)
+	resp.Body.Close()
+	// A replayed nonce is refused by the verifier and never recorded.
+	h.signedDo(t, http.MethodPost, "/run", runBody, "nonce-audit-run-000001").Body.Close()
+
+	raw, err := os.ReadFile(h.auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := splitNonEmptyLines(string(raw))
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 audit lines, got %d: %s", len(lines), raw)
+	}
+	var events []map[string]any
+	for _, line := range lines {
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, event)
+	}
+	types := []string{events[0]["type"].(string), events[1]["type"].(string), events[2]["type"].(string)}
+	if types[0] != "write_file" || types[1] != "read_file" || types[2] != "run" {
+		t.Fatalf("unexpected event types %v", types)
+	}
+	for _, event := range events {
+		if event["keyid"] != clientKeyID || event["source"] != "owner_exec" || event["event_id"] == "" || event["timestamp"] == "" {
+			t.Fatalf("event lacks its envelope or key: %v", event)
+		}
+	}
+	if events[2]["exit_code"].(float64) != 3 || events[2]["timed_out"] != false {
+		t.Fatalf("run event does not carry the exit: %v", events[2])
+	}
+	if events[0]["path"] != "note.txt" || events[0]["bytes"].(float64) != 3 {
+		t.Fatalf("write event does not carry the path and size: %v", events[0])
+	}
 }

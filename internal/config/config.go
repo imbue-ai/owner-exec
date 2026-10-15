@@ -58,6 +58,10 @@ type File struct {
 	ServiceName string `toml:"service_name"`
 	// ForwardPortScript is the path to forward_port.py.
 	ForwardPortScript string `toml:"forward_port_script"`
+	// AuditLogPath, when set, is the JSONL file every verified run, read-file,
+	// write-file, and grants write is appended to, keyed by the signing key's
+	// fingerprint. Empty disables the audit log.
+	AuditLogPath string `toml:"audit_log_path"`
 }
 
 // Load reads a TOML config file, applying defaults.
