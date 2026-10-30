@@ -338,6 +338,37 @@ func TestCORSPreflight(t *testing.T) {
 	}
 }
 
+func TestCORSExposesTheResponseSignatureHeadersToTheChromeOrigin(t *testing.T) {
+	h := newHarness(t, false)
+	req, _ := http.NewRequest("GET", h.server.URL+"/_alive", nil)
+	req.Header.Set("Origin", "https://chrome.example")
+	resp, err := h.server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	exposed := resp.Header.Get("Access-Control-Expose-Headers")
+	for _, name := range []string{"Signature", "Signature-Input", "Content-Digest"} {
+		if !strings.Contains(exposed, name) {
+			t.Fatalf("expected %s exposed to the chrome origin, got %q", name, exposed)
+		}
+	}
+}
+
+func TestCORSExposesNothingToAnotherOrigin(t *testing.T) {
+	h := newHarness(t, false)
+	req, _ := http.NewRequest("GET", h.server.URL+"/_alive", nil)
+	req.Header.Set("Origin", "https://elsewhere.example")
+	resp, err := h.server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if exposed := resp.Header.Get("Access-Control-Expose-Headers"); exposed != "" {
+		t.Fatalf("expected no exposed headers for another origin, got %q", exposed)
+	}
+}
+
 func splitNonEmptyLines(text string) []string {
 	var out []string
 	for _, line := range strings.Split(text, "\n") {
