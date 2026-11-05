@@ -85,7 +85,8 @@ func New(cfg *Config) http.Handler {
 }
 
 // withCORS echoes the configured chrome origin (credentialed, never a
-// wildcard) and answers preflights.
+// wildcard), exposes the response-signature headers to it, and answers
+// preflights.
 func (c *Config) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chromeOrigin := c.ChromeOriginResolver()
@@ -96,6 +97,10 @@ func (c *Config) withCORS(next http.Handler) http.Handler {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 			h.Set("Access-Control-Allow-Headers",
 				"Content-Type, Signature, Signature-Input, Content-Digest, X-Exec-Audience, X-Exec-Public-Key")
+			// A browser hides every non-safelisted response header from a
+			// cross-origin caller unless it is exposed, and the caller needs
+			// these to verify the response signature against the pinned host key.
+			h.Set("Access-Control-Expose-Headers", "Signature, Signature-Input, Content-Digest")
 			h.Add("Vary", "Origin")
 		}
 		if r.Method == http.MethodOptions {
